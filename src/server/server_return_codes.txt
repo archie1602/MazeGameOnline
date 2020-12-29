@@ -1,0 +1,2 @@
+220 Game server ready for new player
+255 [room code] - meaning: New Room created successfully

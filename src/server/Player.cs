@@ -9,14 +9,14 @@ namespace server
 {
     class Player
     {
-        int id;
+        int id; // player id in a specific room
         Socket playerSock;
         (int, int) currPlayerPos;
         public (int, int) prevPlayerPos;
         char marker;
         ConsoleColor color;
 
-        public int Id => id;
+        public int ID => id;
 
         public (int, int) CurrPlayerPos
         {
@@ -46,7 +46,7 @@ namespace server
             set { color = value; }
         }
 
-        public Player(int _id, Socket _playerSock, char _marker, ConsoleColor _color)
+        public Player(Socket _playerSock, int _id, char _marker, ConsoleColor _color)
         {
             id = _id;
             playerSock = _playerSock;

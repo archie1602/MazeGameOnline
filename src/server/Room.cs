@@ -9,18 +9,21 @@ namespace server
 {
     class Room
     {
-        List<Player> players;
+        Player[] players;
         Game game;
         string code;
-        int owner; // owner player id
+        int ownerID; // owner player id
         int maxPlayers;
+        int numPlayers;
         int map;
         public string Code => code;
+        public int NumPlayers => numPlayers;
 
-        public Room(Player _ownerPlayer, int _map, int _maxPlayers)
+        public Room(Player _owner, int _map, int _maxPlayers)
         {
-            players = new List<Player>() { _ownerPlayer };
-            owner = _ownerPlayer.Id;
+            players = new Player[_maxPlayers];
+            numPlayers = 0;
+            ownerID = _owner.ID;
             map = _map;
             maxPlayers = _maxPlayers;
             game = null;
@@ -28,7 +31,7 @@ namespace server
             code = GenerateCode(6, true);
         }
 
-        // Generates a random string with a given size.    
+        // generates a random string with a given size
         string GenerateCode(int size, bool lowerCase = false)
         {
             Random _random = new Random();
@@ -52,9 +55,18 @@ namespace server
             return lowerCase ? builder.ToString().ToLower() : builder.ToString();
         }
 
+        public Player GetPlayer(int index)
+        {
+            return players[index];
+        }
+
+        // add a new player to the room
         public void AddPlayer(Player player)
         {
-            players.Add(player);
+            if (maxPlayers == numPlayers)
+                throw new Exception($"Max players are {maxPlayers}");
+            else
+                players[numPlayers++] = player;
         }
     }
 }

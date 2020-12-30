@@ -1,8 +1,8 @@
 using System;
 using System.IO;
 using System.Net;
-using System.Net.Sockets;
 using System.Threading;
+using System.Net.Sockets;
 using System.Text;
 using System.Collections.Generic;
 
@@ -14,6 +14,7 @@ namespace server
         int port;
         string name;
         List<Room> rooms;
+        object locker = new object();
         public bool IsRunning { get; set; }
 
         public Server(string _ip, int _port, string _name)
@@ -55,6 +56,16 @@ namespace server
             sw.Flush();
         }
 
+        // checking the existence of a room with a given room code
+        (bool isRoomExist, Room room) IsRoomExist(string roomCode)
+        {
+            foreach (Room r in rooms)
+                if (r.Code == roomCode)
+                    return (true, r);
+
+            return (false, null);
+        }
+
         void HandlePlayerCmds(object obj)
         {
             Socket playerSock = (Socket)obj;
@@ -63,7 +74,8 @@ namespace server
             StreamWriter writer = new StreamWriter(stream);
             StreamReader reader = new StreamReader(stream);
 
-            // State variables
+            // state variables
+            Player player = null; // client player
             Room room = null; // room that corresponds current player socket
 
             SendResponse(writer, "220 READY " + name);
@@ -77,9 +89,51 @@ namespace server
 
                 string cmd = requestSplit[0].ToUpperInvariant();
 
-                // Cmd: CR (marker,color,map,maxplayers), where: CR = CR CREATE ROOM
-                if (cmd == "CR")
+                if (cmd == "ER")
                 {
+                    // cmd: ER (marker,color,roomCode), where: ER = ENTER ROOM
+
+                    string[] argArr = requestSplit[1].Substring(1, requestSplit[1].Length - 2).Split(',');
+
+                    // get ER args
+                    char marker = Char.Parse(argArr[0]);
+                    string color = argArr[1];
+                    string roomCode = argArr[2];
+
+                    // must check if the arguments are correct
+
+                    // checking the existence of a room with a given room code
+                    (bool isRoomExist, Room room) t = IsRoomExist(roomCode);
+
+                    // if the room exists
+                    if (t.isRoomExist)
+                    {
+                        // must connect this user to specified room
+
+                        // bind this player to specified room
+                        room = t.room;
+
+                        lock (locker)
+                        {
+                            // create player instance for this client
+                            player = new Player(playerSock, room.NumPlayers, marker, ConsoleColor.Green);
+
+                            // add player instance to specified room
+                            room.AddPlayer(player);
+                        }
+
+                        // send a response to the client
+                        SendResponse(writer, "245 " + player.ID);
+                    }
+                    else
+                    {
+                        SendResponse(writer, "425");
+                    }
+                }
+                else if (cmd == "CR")
+                {
+                    // cmd: CR (marker,color,map,maxplayers), where: CR = CREATE ROOM
+
                     string[] argSplit = requestSplit[1].Trim(new char[] { '(', ')' }).Split(',');
 
                     // get CR args
@@ -92,11 +146,42 @@ namespace server
 
                     // must create new game room
 
-                    Player ownerPlayer = new Player(0, playerSock, marker, ConsoleColor.Green);
+                    player = new Player(playerSock, 0, marker, ConsoleColor.Green);
 
-                    room = new Room(ownerPlayer, map, maxPlayers);
+                    room = new Room(player, map, maxPlayers);
+                    room.AddPlayer(player);
+
+                    rooms.Add(room);
 
                     SendResponse(writer, "255 " + room.Code);
+                }
+                else if (cmd == "LPIR")
+                {
+                    // check: if a room has been created for this user
+
+                    if (room == null)
+                    {
+                        // => FAIL
+                    }
+                    else
+                    {
+                        SendResponse(writer, "265 successful listing");
+
+                        string listing = string.Empty;
+                        Player cp = null; // current player
+
+                        for (int i = 0; i < room.NumPlayers; i++)
+                        {
+                            cp = room.GetPlayer(i);
+                            listing += $"({cp.ID},{cp.Color.ToString()},{cp.Marker})";
+
+                            if (i + 1 != room.NumPlayers)
+                                listing += ";";
+                        }
+
+                        SendResponse(writer, listing);
+                    }
+
                 }
 
                 // Также еще необходимо следующие команды: вернуть список игроков в комнате текущего плеера (если он подключен к какой-то комнате)

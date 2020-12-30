@@ -1,52 +1,58 @@
 using System;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading;
+using System.Text;
+using System.Collections.Generic;
 
 namespace client
 {
     class Player
     {
+        int id; // player id in a specific room
         (int, int) currPlayerPos;
-        (int, int) prevPlayerPos;
-        (int, int) mapPos;
+        public (int, int) prevPlayerPos;
         char marker;
         ConsoleColor color;
+
+        public int ID => id;
 
         public (int, int) CurrPlayerPos
         {
             get { return currPlayerPos; }
             set
             {
-                prevPlayerPos = currPlayerPos;
+                PrevPlayerPos = currPlayerPos;
                 currPlayerPos = value;
             }
         }
 
-        public Player((int, int) _currPlayerPos, (int, int) _mapPos, char _marker, ConsoleColor _color)
+        public (int, int) PrevPlayerPos
         {
-            currPlayerPos = _currPlayerPos;
-            prevPlayerPos = _currPlayerPos;
-            mapPos = _mapPos;
+            get { return currPlayerPos; }
+            set { prevPlayerPos = value; }
+        }
 
+        public char Marker
+        {
+            get { return marker; }
+            set { marker = value; }
+        }
+
+        public ConsoleColor Color
+        {
+            get { return color; }
+            set { color = value; }
+        }
+
+        public Player(int _id, char _marker, ConsoleColor _color)
+        {
+            id = _id;
             marker = _marker;
             color = _color;
+
+            currPlayerPos = (0, 0);
+            prevPlayerPos = currPlayerPos;
         }
-
-        public void Draw()
-        {
-            int shiftX = mapPos.Item1 + 1;
-            int shiftY = mapPos.Item2 + 1;
-
-            Console.ResetColor();
-
-            // Erase player from old position
-            Console.SetCursorPosition(shiftX + prevPlayerPos.Item1, shiftY + prevPlayerPos.Item2);
-            Console.Write(" ");
-
-            Console.ForegroundColor = color;
-
-            // Draw player in a new position
-            Console.SetCursorPosition(shiftX + currPlayerPos.Item1, shiftY + currPlayerPos.Item2);
-            Console.Write(marker);
-        }
-
     }
 }

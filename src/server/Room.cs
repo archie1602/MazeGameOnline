@@ -11,24 +11,22 @@ namespace server
     {
         Player[] players;
         Game game;
-        string code;
-        int ownerID; // owner player id
-        int maxPlayers;
-        int numPlayers;
-        int map;
-        public string Code => code;
-        public int NumPlayers => numPlayers;
+        public int MaxPlayers { get; set; }
+        public int Map { get; set; }
+        public string Code { get; set; }
+        public int OwnerID { get; set; } // owner player id
+        public int NumPlayers { get; set; }
 
         public Room(Player _owner, int _map, int _maxPlayers)
         {
             players = new Player[_maxPlayers];
-            numPlayers = 0;
-            ownerID = _owner.ID;
-            map = _map;
-            maxPlayers = _maxPlayers;
+            NumPlayers = 0;
+            OwnerID = _owner.ID;
+            Map = _map;
+            MaxPlayers = _maxPlayers;
             game = null;
 
-            code = GenerateCode(6, true);
+            Code = GenerateCode(6, true);
         }
 
         // generates a random string with a given size
@@ -55,18 +53,28 @@ namespace server
             return lowerCase ? builder.ToString().ToLower() : builder.ToString();
         }
 
-        public Player GetPlayer(int index)
+        public Player GetPlayerByID(int id)
         {
+            foreach (Player p in players)
+                if (p.ID == id)
+                    return p;
+
+            return null;
+        }
+
+        public Player GetPlayerByIndex(int index)
+        {
+            // TODO: add check
             return players[index];
         }
 
         // add a new player to the room
         public void AddPlayer(Player player)
         {
-            if (maxPlayers == numPlayers)
-                throw new Exception($"Max players are {maxPlayers}");
+            if (MaxPlayers == NumPlayers)
+                throw new Exception($"Max players are {MaxPlayers}");
             else
-                players[numPlayers++] = player;
+                players[NumPlayers++] = player;
         }
     }
 }

@@ -1,7 +1,8 @@
 220 Game server ready for new player
-245 [player id in the room] - meaning: successful connection to the room
+245 ([player id in the room],[owner id],[owner marker],[owner color]) - meaning: successful connection to the room
 255 [room code] - meaning: new room created successfully
 265 - meaning: room listing completed successfully
 
 Error codes:
 425 - meaning: the room with the given code does not exist
+435 - meaning: you are not connected to any room

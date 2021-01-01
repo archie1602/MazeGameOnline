@@ -9,15 +9,13 @@ namespace server
 {
     class Player
     {
-        int id; // player id in a specific room
         Socket playerSock;
         (int, int) currPlayerPos;
-        public (int, int) prevPlayerPos;
-        char marker;
-        ConsoleColor color;
 
-        public int ID => id;
-
+        public int ID { get; set; } // player id in a specific room
+        public (int, int) PrevPlayerPos { get; set; }
+        public char Marker { get; set; }
+        public string Color { get; set; }
         public (int, int) CurrPlayerPos
         {
             get { return currPlayerPos; }
@@ -28,33 +26,15 @@ namespace server
             }
         }
 
-        public (int, int) PrevPlayerPos
+        public Player(Socket _playerSock, int _id, char _marker, string _color)
         {
-            get { return currPlayerPos; }
-            set { prevPlayerPos = value; }
-        }
-
-        public char Marker
-        {
-            get { return marker; }
-            set { marker = value; }
-        }
-
-        public ConsoleColor Color
-        {
-            get { return color; }
-            set { color = value; }
-        }
-
-        public Player(Socket _playerSock, int _id, char _marker, ConsoleColor _color)
-        {
-            id = _id;
+            ID = _id;
             playerSock = _playerSock;
-            marker = _marker;
-            color = _color;
+            Marker = _marker;
+            Color = _color;
 
             currPlayerPos = (0, 0);
-            prevPlayerPos = currPlayerPos;
+            PrevPlayerPos = currPlayerPos;
         }
     }
 }

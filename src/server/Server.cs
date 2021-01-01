@@ -5,10 +5,12 @@ using System.Threading;
 using System.Net.Sockets;
 using System.Text;
 using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace server
 {
-    class Server
+    public class Server
     {
         IPAddress ip;
         int port;
@@ -26,20 +28,6 @@ namespace server
             IsRunning = false;
         }
 
-        /*
-        void ServerGreeting(Socket clientSock)
-        {
-            NetworkStream stream = new NetworkStream(clientSock);
-            StreamWriter writer = new StreamWriter(stream);
-
-            writer.WriteLine("READY " + name); // Cmd: READY [game server name]
-            writer.Flush();
-
-            writer.Close();
-            stream.Close();
-        }
-        */
-
         // this method accepts new players
         void AcceptPlayer(Socket listener)
         {
@@ -50,10 +38,17 @@ namespace server
             thread.Start(playerSock);
         }
 
-        void SendResponse(StreamWriter sw, string response)
+        void SendResponse(StreamWriter sw, object resp)
         {
-            sw.WriteLine(response);
+            string json = JsonSerializer.Serialize(resp);
+
+            sw.WriteLine(json);
             sw.Flush();
+        }
+
+        void ReadCmd(StreamReader sr)
+        {
+
         }
 
         // checking the existence of a room with a given room code
@@ -78,32 +73,31 @@ namespace server
             Player player = null; // client player
             Room room = null; // room that corresponds current player socket
 
-            SendResponse(writer, "220 READY " + name);
+            ResponseServerState rss = new ResponseServerState()
+            {
+                Code = 220,
+                Description = "READY",
+                Name = name
+            };
+
+            SendResponse(writer, rss);
 
             while (true)
             {
                 string request = reader.ReadLine();
+                RequestCmd rc = JsonSerializer.Deserialize<RequestCmd>(request);
 
-                // split the command by spaces
-                string[] requestSplit = request.Split(' ');
-
-                string cmd = requestSplit[0].ToUpperInvariant();
-
-                if (cmd == "ER")
+                // cmd: ER = enter room
+                if (rc.CMD == Cmd.ER)
                 {
                     // cmd: ER (marker,color,roomCode), where: ER = ENTER ROOM
 
-                    string[] argArr = requestSplit[1].Substring(1, requestSplit[1].Length - 2).Split(',');
-
-                    // get ER args
-                    char marker = Char.Parse(argArr[0]);
-                    string color = argArr[1];
-                    string roomCode = argArr[2];
+                    RequestCmdEnterRoom rcer = JsonSerializer.Deserialize<RequestCmdEnterRoom>(request);
 
                     // must check if the arguments are correct
 
                     // checking the existence of a room with a given room code
-                    (bool isRoomExist, Room room) t = IsRoomExist(roomCode);
+                    (bool isRoomExist, Room room) t = IsRoomExist(rcer.RoomCode);
 
                     // if the room exists
                     if (t.isRoomExist)
@@ -116,90 +110,117 @@ namespace server
                         lock (locker)
                         {
                             // create player instance for this client
-                            player = new Player(playerSock, room.NumPlayers, marker, ConsoleColor.Green);
+                            player = new Player(playerSock, room.NumPlayers, rcer.Marker, rcer.Color);
 
                             // add player instance to specified room
                             room.AddPlayer(player);
                         }
 
+                        ResponseEnterRoom rer = new ResponseEnterRoom()
+                        {
+                            Code = 245,
+                            Description = "successful connection to the room",
+                            VisitorPlayerID = player.ID,
+                            OwnerPlayerID = room.OwnerID,
+                            Map = room.Map,
+                            MaxPlayers = room.MaxPlayers,
+                            PlayersInfo = new PlayerInfo[room.NumPlayers]
+                        };
+
+                        Player cp = null; // current player
+
+                        for (int i = 0; i < room.NumPlayers; i++)
+                        {
+                            cp = room.GetPlayerByIndex(i);
+                            rer.PlayersInfo[i] = new PlayerInfo { ID = cp.ID, Color = cp.Color, Marker = cp.Marker };
+                        }
+
                         // send a response to the client
-                        SendResponse(writer, "245 " + player.ID);
+                        SendResponse(writer, rer);
                     }
                     else
                     {
-                        SendResponse(writer, "425");
+                        Response resp = new Response()
+                        {
+                            Code = 425,
+                            Description = "the room with the given code doesn't exist"
+                        };
+
+                        // send a response to the client
+                        SendResponse(writer, resp);
                     }
                 }
-                else if (cmd == "CR")
+                else if (rc.CMD == Cmd.CR) // cmd: CR = create room
                 {
                     // cmd: CR (marker,color,map,maxplayers), where: CR = CREATE ROOM
 
-                    string[] argSplit = requestSplit[1].Trim(new char[] { '(', ')' }).Split(',');
-
-                    // get CR args
-                    char marker = Char.Parse(argSplit[0]);
-                    string color = argSplit[1];
-                    int map = Int32.Parse(argSplit[2]);
-                    int maxPlayers = Int32.Parse(argSplit[3]);
+                    RequestCmdCreateRoom rccr = JsonSerializer.Deserialize<RequestCmdCreateRoom>(request);
 
                     // must check if the arguments are correct
 
                     // must create new game room
 
-                    player = new Player(playerSock, 0, marker, ConsoleColor.Green);
+                    player = new Player(playerSock, 0, rccr.Marker, rccr.Color);
 
-                    room = new Room(player, map, maxPlayers);
+                    room = new Room(player, rccr.Map, rccr.MaxPlayers);
                     room.AddPlayer(player);
 
                     rooms.Add(room);
 
-                    SendResponse(writer, "255 " + room.Code);
+                    ResponseCreateRoom rcr = new ResponseCreateRoom()
+                    {
+                        Code = 255,
+                        Description = "new room created successfully",
+                        RoomCode = room.Code
+                    };
+
+                    // send a response to the client
+                    SendResponse(writer, rcr);
                 }
-                else if (cmd == "LPIR")
+                else if (rc.CMD == Cmd.LPIR) // cmd: LPIR = listing players in a room
                 {
                     // check: if a room has been created for this user
 
                     if (room == null)
                     {
-                        // => FAIL
+                        Response resp = new Response()
+                        {
+                            Code = 435,
+                            Description = "you are not connected to any room"
+                        };
+
+                        // send a response to the client
+                        SendResponse(writer, resp);
                     }
                     else
                     {
-                        SendResponse(writer, "265 successful listing");
-
-                        string listing = string.Empty;
                         Player cp = null; // current player
+
+                        ResponseListingPlayersInRoom rlpir = new ResponseListingPlayersInRoom()
+                        {
+                            Code = 265,
+                            Description = "successful listing",
+                            PlayersInfo = new PlayerInfo[room.NumPlayers]
+                        };
 
                         for (int i = 0; i < room.NumPlayers; i++)
                         {
-                            cp = room.GetPlayer(i);
-                            listing += $"({cp.ID},{cp.Color.ToString()},{cp.Marker})";
-
-                            if (i + 1 != room.NumPlayers)
-                                listing += ";";
+                            cp = room.GetPlayerByIndex(i);
+                            rlpir.PlayersInfo[i] = new PlayerInfo { ID = cp.ID, Color = cp.Color, Marker = cp.Marker };
                         }
 
-                        SendResponse(writer, listing);
+                        // send a response to the client
+                        SendResponse(writer, rlpir);
                     }
-
                 }
-
-                // Также еще необходимо следующие команды: вернуть список игроков в комнате текущего плеера (если он подключен к какой-то комнате)
-                // то есть команда выглядит так 'LPIR' (listing players in room)
-
-                // Maeybe there is more than 3 command; maybe we need to process rooms commands
             }
-
-            // Should to understand what this player really wants to do: [create room] or [enter a room]
-
-            // Need to proccess client command in loop
 
             reader.Close();
             writer.Close();
             stream.Close();
         }
 
-        // Start the server
+        // start the server
         public void Start()
         {
             // set flag 'IsRunning' to value: true

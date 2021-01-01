@@ -9,13 +9,11 @@ namespace client
 {
     class Player
     {
-        int id; // player id in a specific room
+        public int ID { get; set; } // player id in a specific room
+        public (int, int) PrevPlayerPos { get; set; }
+        public char Marker { get; set; }
+        public string Color { get; set; }
         (int, int) currPlayerPos;
-        public (int, int) prevPlayerPos;
-        char marker;
-        ConsoleColor color;
-
-        public int ID => id;
 
         public (int, int) CurrPlayerPos
         {
@@ -27,32 +25,14 @@ namespace client
             }
         }
 
-        public (int, int) PrevPlayerPos
+        public Player(int _id, char _marker, string _color)
         {
-            get { return currPlayerPos; }
-            set { prevPlayerPos = value; }
-        }
-
-        public char Marker
-        {
-            get { return marker; }
-            set { marker = value; }
-        }
-
-        public ConsoleColor Color
-        {
-            get { return color; }
-            set { color = value; }
-        }
-
-        public Player(int _id, char _marker, ConsoleColor _color)
-        {
-            id = _id;
-            marker = _marker;
-            color = _color;
+            ID = _id;
+            Marker = _marker;
+            Color = _color;
 
             currPlayerPos = (0, 0);
-            prevPlayerPos = currPlayerPos;
+            PrevPlayerPos = CurrPlayerPos;
         }
     }
 }

@@ -110,9 +110,9 @@ namespace client
             }
             else if (type == Type.CreateRoom)
             {
-                string ip = null;
-                string color = null;
-                char marker = '\0';
+                string ip = "127.0.0.1";
+                string color = "#ff7150";
+                char marker = '@';
                 int port = 11000;
                 int maxPlayers = 1;
 
@@ -175,10 +175,10 @@ namespace client
             }
             else if (type == Type.EnterRoom)
             {
-                string ip = null;
-                string color = null;
+                string ip = "127.0.0.1";
+                string color = "#4ea952";
                 string roomCode = null;
-                char marker = '\0';
+                char marker = '#';
                 int port = 11000;
 
                 ConsoleKey keyPressed;

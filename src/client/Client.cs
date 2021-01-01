@@ -1,9 +1,10 @@
 ﻿using System;
-using System.IO;
 using Figgle;
 using Pastel;
+using System.IO;
 using System.Net;
 using System.Threading;
+using System.Text.Json;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
 
@@ -52,7 +53,7 @@ namespace client
                     "Quit"
                 };
 
-                DisplayTitle("Welcome to the Maze Game. To start the game you need to connect to the server.", ConsoleColor.DarkGreen, 8);
+                DisplayTitle("Welcome to the Maze Game. To start the game you need to connect to the server", ConsoleColor.DarkGreen, 8);
                 DisplayTitleRight("Client v1.0", 10);
 
                 Menu main = new Menu(mainMenuOptions, Menu.Type.Main, 10);
@@ -60,7 +61,10 @@ namespace client
                 int selectedButton = main.Run().Value.selectedIndex;
 
                 if (selectedButton == 0)
-                    DisplayEnterRoom();
+                    if (DisplayEnterRoom())
+                        break;
+                    else
+                        continue;
                 if (selectedButton == 1)
                 {
                     if (DisplayCreateRoom())
@@ -102,15 +106,10 @@ namespace client
 
             try
             {
-                // selectedIndex, marker, color, ip, port, maxPlayers, roomCode
                 (int selectedIndex, char marker, string color, string ip, int port, int maxPlayers, string roomCode) roomInfo = enterRoom.Run().Value;
 
                 if (roomInfo.selectedIndex == 5) // Enter
-                {
-                    // marker, color, ip, port, roomCode
-
                     EnterRoom((roomInfo.marker, roomInfo.color, roomInfo.ip, roomInfo.port, roomInfo.roomCode));
-                }
                 else if (roomInfo.selectedIndex == 6) // Quit
                     return false;
             }
@@ -206,10 +205,98 @@ namespace client
             return isIPAddress;
         }
 
+        void SendCmd(object requestCmd)
+        {
+            string json = JsonSerializer.Serialize(requestCmd);
+
+            writer.WriteLine(json);
+            writer.Flush();
+        }
+
+        void EnterRoom((char marker, string color, string ip, int port, string roomCode) roomInfo)
+        {
+            IPAddress ip = IPAddress.Parse(roomInfo.ip);
+            int port = roomInfo.port;
+            char marker = roomInfo.marker;
+            string color = roomInfo.color;
+            string roomCode = roomInfo.roomCode;
+
+            IPEndPoint remoteEP = new IPEndPoint(ip, port);
+
+            playerSock = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+
+            try
+            {
+                playerSock.Connect(remoteEP);
+
+                stream = new NetworkStream(playerSock);
+                reader = new StreamReader(stream);
+
+                string response = reader.ReadLine();
+                ResponseServerState rss = JsonSerializer.Deserialize<ResponseServerState>(response);
+
+                string serverName = rss.Name;
+
+                if (rss.Code == 220)
+                {
+                    writer = new StreamWriter(stream);
+
+                    // ENTER ROOM (Cmd.ER, marker, color, roomCode)
+                    RequestCmdEnterRoom rcer = new RequestCmdEnterRoom()
+                    {
+                        CMD = Cmd.ER,
+                        Marker = marker,
+                        Color = color,
+                        RoomCode = roomCode
+                    };
+
+                    // send command to the server
+                    SendCmd(rcer);
+
+                    // read server answer
+                    response = reader.ReadLine();
+                    ResponseEnterRoom rer = JsonSerializer.Deserialize<ResponseEnterRoom>(response);
+
+                    // proccess server response
+
+                    // if the connection to the room is established
+                    if (rer.Code == 245)
+                    {
+                        playerType = PlayerType.visitor;
+
+                        //Player visitor = new Player(rer.VisitorPlayerID, marker, color);
+                        room = new Room(roomCode, rer.OwnerPlayerID, rer.Map, rer.MaxPlayers);
+                        //room.AddPlayer(visitor);
+
+                        for (int i = 0; i < rer.PlayersInfo.Length; i++)
+                            room.AddPlayer(new Player(rer.PlayersInfo[i].ID, rer.PlayersInfo[i].Marker, rer.PlayersInfo[i].Color));
+
+                        WaitingRoom();
+
+                    } // Else, the connection to the room isn't established :(
+                    else if (rer.Code == 425)
+                    {
+                        // => the room with the given code does not exist
+                    }
+
+                    writer.Close();
+                }
+                else
+                {
+                    // Server busy... Please try again later...
+                }
+
+                reader.Close();
+                stream.Close();
+            }
+            catch (SocketException sockExc)
+            {
+
+            }
+        }
+
         void CreateRoom((char marker, string color, string ip, int port, int maxPlayers) roomSettings)
         {
-            // marker, color, ip, port, maxPlayers
-
             IPAddress ip = IPAddress.Parse(roomSettings.ip);
             int port = roomSettings.port;
             char marker = roomSettings.marker;
@@ -229,36 +316,40 @@ namespace client
                 reader = new StreamReader(stream);
 
                 string response = reader.ReadLine();
-                string request = string.Empty;
-                string serverName = string.Empty;
+                ResponseServerState rss = JsonSerializer.Deserialize<ResponseServerState>(response);
 
-                if (response.Contains("READY"))
+                string serverName = rss.Name;
+
+                if (rss.Code == 220)
                 {
                     writer = new StreamWriter(stream);
 
-                    request = $"CR ({marker},{color},{map},{maxPlayers})"; // CREATE ROOM (marker, color, map, maxplayers)
-                    serverName = response.Substring(10);
+                    // CREATE ROOM (Cmd.CR, marker, color, map, maxplayers)
+                    RequestCmdCreateRoom rccr = new RequestCmdCreateRoom()
+                    {
+                        CMD = Cmd.CR,
+                        Marker = marker,
+                        Color = color,
+                        Map = map,
+                        MaxPlayers = maxPlayers
+                    };
 
-                    // Add only to the streamwriter buffer
-                    writer.WriteLine(request);
+                    // send command to the server
+                    SendCmd(rccr);
 
-                    // Push and send to server and clear streamwriter buffer
-                    writer.Flush();
-
-                    // Read server answer
+                    // read server answer
                     response = reader.ReadLine();
+                    ResponseCreateRoom rcr = JsonSerializer.Deserialize<ResponseCreateRoom>(response);
 
-                    // Proccess server response
+                    // proccess server response
 
-                    // If the server is ready to create a room for us
-                    if (response.Contains("255")) // => ROOM CREATED
+                    // if the server is ready to create a room for us
+                    if (rcr.Code == 255) // => ROOM CREATED
                     {
                         playerType = PlayerType.owner;
 
-                        string roomCode = response.Split(' ')[1];
-
-                        Player owner = new Player(0, marker, ConsoleColor.Green);
-                        room = new Room(roomCode, 0, map, maxPlayers);
+                        Player owner = new Player(0, marker, color);
+                        room = new Room(rcr.RoomCode, 0, map, maxPlayers);
                         room.AddPlayer(owner);
 
                         WaitingRoom();
@@ -286,87 +377,6 @@ namespace client
             Console.ReadKey();
         }
 
-        void EnterRoom((char marker, string color, string ip, int port, string roomCode) roomInfo)
-        {
-            // marker, color, ip, port, roomCode
-
-            IPAddress ip = IPAddress.Parse(roomInfo.ip);
-            int port = roomInfo.port;
-            char marker = roomInfo.marker;
-            string color = roomInfo.color;
-            string roomCode = roomInfo.roomCode;
-
-            IPEndPoint remoteEP = new IPEndPoint(ip, port);
-
-            playerSock = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-
-            try
-            {
-                playerSock.Connect(remoteEP);
-
-                stream = new NetworkStream(playerSock);
-                reader = new StreamReader(stream);
-
-                string response = reader.ReadLine();
-                string request = string.Empty;
-                string serverName = string.Empty;
-
-                if (response.Contains("READY"))
-                {
-                    writer = new StreamWriter(stream);
-
-                    request = $"ER ({marker},{color},{roomCode})"; // ENTER ROOM (marker, color, roomCode)
-                    serverName = response.Substring(10);
-
-                    // send command to the server
-                    SendCmd(request);
-
-                    // read server answer
-                    response = reader.ReadLine();
-
-                    // proccess server response
-
-                    // If the connetion to the room is established
-                    if (response.Contains("245")) // => connection to the room is established
-                    {
-                        playerType = PlayerType.visitor;
-
-                        int playerID = int.Parse(response.Split(' ')[1]);
-
-                        Player visitor = new Player(playerID, marker, ConsoleColor.Yellow);
-                        room = new Room(roomCode, 0, 1, 5);
-                        room.AddPlayer(visitor);
-
-                        WaitingRoom();
-
-                    } // Else, the connection to the room isn't established :(
-                    else if (response.Contains("425"))
-                    {
-                        // => the room with the given code does not exist
-                    }
-
-                    writer.Close();
-                }
-                else
-                {
-                    // Server busy... Please try again later...
-                }
-
-                reader.Close();
-                stream.Close();
-            }
-            catch (SocketException sockExc)
-            {
-
-            }
-        }
-
-        void SendCmd(string cmd)
-        {
-            writer.WriteLine(cmd);
-            writer.Flush();
-        }
-
         // listing players in a room with a time interval
         void ListingPlayers(object obj)
         {
@@ -374,23 +384,51 @@ namespace client
 
             isListing = true;
 
-            int maxLength = 0;
-            (int id, ConsoleColor color, char marker)[] t = null;
+            int maxLength = 2;
+            bool isErase = false;
+
+            // LISTING PLAYERS IN THE ROOM
+            RequestCmd requestCmd = new RequestCmd()
+            {
+                CMD = Cmd.LPIR,
+            };
 
             while (isListing)
             {
-                // send command
-                SendCmd("LPIR");
-
+                // send command to the server
+                SendCmd(requestCmd);
 
                 // read server response
                 string response = reader.ReadLine();
+                ResponseListingPlayersInRoom rlpir = JsonSerializer.Deserialize<ResponseListingPlayersInRoom>(response);
 
-
-                if (response.Contains("265"))
+                if (rlpir.Code == 265)
                 {
-                    string listing = reader.ReadLine();
+                    // STOPPED HERE
+                    // TEST THIS CODE
+                    // AND FIX WaitingRoom() method
 
+                    // Erase
+                    if (isErase)
+                    {
+                        Console.SetCursorPosition((Console.WindowWidth - (maxLength + 1 + 16)) / 2, 10);
+                        for (int i = 0; i < rlpir.PlayersInfo.Length; i++)
+                            for (int j = 0; j < maxLength + 1 + 16; j++)
+                                Console.Write(" ");
+                    }
+                    else
+                        isErase = true;
+
+                    for (int i = 0; i < rlpir.PlayersInfo.Length; i++)
+                    {
+                        Console.SetCursorPosition((Console.WindowWidth - (maxLength + 1 + 16)) / 2, 10 + i);
+                        Console.Write($"{rlpir.PlayersInfo[i].Marker}".Pastel(rlpir.PlayersInfo[i].Color));
+
+                        Console.Write("                ");
+                        Console.Write($"{rlpir.PlayersInfo[i].ID}");
+                    }
+
+                    /*
                     // Erase
                     if (t != null)
                     {
@@ -431,10 +469,11 @@ namespace client
                         Console.Write("                ");
                         Console.WriteLine($"{p.id}");
                     }
+                    */
                 }
-                else
+                else if (rlpir.Code == 435)
                 {
-                    // => BAD: listing players
+                    // => BAD: listing players => current player is not connected to any room
                 }
 
                 Thread.Sleep(timeout);
@@ -444,14 +483,12 @@ namespace client
         void WaitingRoom()
         {
             Console.Clear();
-
+            // TODO: add title
             DisplayIntro();
             DisplayTitle("Player list", ConsoleColor.DarkGreen, 8);
 
             DisplayTitleLeft("Owner: ", 8);
-            Console.ForegroundColor = room.GetPlayer(room.OwnerID).Color;
-            Console.Write($"{room.GetPlayer(room.OwnerID).Marker}");
-            Console.ResetColor();
+            Console.Write($"{room.GetPlayerByID(room.OwnerID).Marker}".Pastel(room.GetPlayerByID(room.OwnerID).Color));
 
             DisplayTitleRight("Room code: " + room.Code, 8);
 
